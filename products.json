@@ -6,8 +6,14 @@
     "description": "Практическое руководство по заработку с помощью искусственного интеллекта",
     "price_xtr": 310,
     "delivery_type": "text",
-    "delivery_value": "https://docs.google.com/document/d/1O-eUXdV94L-4Zdp68j8II0MucwpZx14E/edit?usp=drive_link&ouid=101890352027035914928&rtpof=true&sd=true",
-    "button_text": "Купить за 310 ⭐",
+    "delivery_value": "https://t.me/Zarabotok49_bot"
+
+Use this token to access the HTTP API:
+7981019669:AAHhHL2vsT9GpGqh70HSzwV5ydR4f_F9hhQ
+Keep your token secure and store it safely, it can be used by anyone to control your bot.
+
+For a description of the Bot API, see this page: https://core.telegram.org/bots/apil",
+    "button_text": "Купить за 310 руб. ⭐",
     "image_url": "https://placehold.co/1200x800/png?text=Digital+Guide"
   },
   {
