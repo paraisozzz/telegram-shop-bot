@@ -1,0 +1,22 @@
+[
+  {
+    "id": "guide_1",
+    "title": "PDF-гайд: 50 идей цифровых товаров",
+    "description": "Полезный PDF для запуска продаж в Telegram.",
+    "price_xtr": 150,
+    "delivery_type": "text",
+    "delivery_value": "Спасибо за покупку! Замените этот текст на ссылку, код доступа или инструкцию.",
+    "button_text": "Купить за 150 ⭐",
+    "image_url": "https://placehold.co/1200x800/png?text=Digital+Guide"
+  },
+  {
+    "id": "channel_vip",
+    "title": "Доступ в VIP-канал на 30 дней",
+    "description": "Бот отправит ссылку на закрытый канал после оплаты.",
+    "price_xtr": 300,
+    "delivery_type": "text",
+    "delivery_value": "Вставьте сюда одноразовую или постоянную ссылку на закрытый канал: https://t.me/+your_invite_link",
+    "button_text": "Открыть VIP за 300 ⭐",
+    "image_url": "https://placehold.co/1200x800/png?text=VIP+Channel"
+  }
+]
