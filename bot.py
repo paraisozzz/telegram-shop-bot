@@ -1,339 +1,451 @@
 import json
-import logging
 import os
-import sqlite3
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, Dict, Optional
-
-from dotenv import load_dotenv
-from telegram import (
-    InlineKeyboardButton,
+from aiogram import Bot, Dispatcher, types
+from aiogram.types import (
     InlineKeyboardMarkup,
+    InlineKeyboardButton,
     LabeledPrice,
-    Update,
+    PreCheckoutQuery
 )
-from telegram.constants import ParseMode
-from telegram.ext import (
-    Application,
-    CallbackQueryHandler,
-    CommandHandler,
-    ContextTypes,
-    MessageHandler,
-    PreCheckoutQueryHandler,
-    filters,
-)
+from aiogram.utils import executor
+from aiogram.dispatcher import FSMContext
+from aiogram.dispatcher.filters.state import State, StatesGroup
+from aiogram.contrib.fsm_storage.memory import MemoryStorage
 
-BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / "shop.db"
-PRODUCTS_PATH = BASE_DIR / "products.json"
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-SUPPORT_USERNAME = os.getenv("SUPPORT_USERNAME", "your_support_username")
-CHANNEL_URL = os.getenv("CHANNEL_URL", "https://t.me/your_channel")
-ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID", "")
+# ===== НАСТРОЙКИ =====
+BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN")
+PROVIDER_TOKEN = os.getenv("PROVIDER_TOKEN", "YOUR_PROVIDER_TOKEN")
+ADMIN_ID = int(os.getenv("ADMIN_ID", "123456789"))
 
-logging.basicConfig(
-    format="%(asctime)s | %(name)s | %(levelname)s | %(message)s",
-    level=logging.INFO,
-)
-logger = logging.getLogger(__name__)
+storage = MemoryStorage()
+bot = Bot(BOT_TOKEN, parse_mode="HTML")
+dp = Dispatcher(bot, storage=storage)
+
+DATA_FILE = "data.json"
 
 
-@dataclass
-class Product:
-    id: str
-    title: str
-    description: str
-    price_xtr: int
-    delivery_type: str
-    delivery_value: str
-    button_text: str = "Купить"
-    image_url: Optional[str] = None
+# ===== СОСТОЯНИЯ FSM =====
+class AdminStates(StatesGroup):
+    waiting_for_photo = State()
 
 
-DEFAULT_PRODUCTS = [
-    {
-        "id": "guide_1",
-        "title": "PDF-гайд: 50 идей цифровых товаров",
-        "description": "Полезный PDF для запуска продаж в Telegram.",
-        "price_xtr": 150,
-        "delivery_type": "text",
-        "delivery_value": "Спасибо за покупку! Замените этот текст на ссылку, код доступа или инструкцию.",
-        "button_text": "Купить за 150 ⭐",
-        "image_url": "https://placehold.co/1200x800/png?text=Digital+Guide",
-    },
-    {
-        "id": "channel_vip",
-        "title": "Доступ в VIP-канал на 30 дней",
-        "description": "Бот отправит ссылку на закрытый канал после оплаты.",
-        "price_xtr": 300,
-        "delivery_type": "text",
-        "delivery_value": "Вставьте сюда одноразовую или постоянную ссылку на закрытый канал: https://t.me/+your_invite_link",
-        "button_text": "Открыть VIP за 300 ⭐",
-        "image_url": "https://placehold.co/1200x800/png?text=VIP+Channel",
-    },
-]
+# ===== СТРУКТУРА ДАННЫХ =====
+DEFAULT_DATA = {
+    "welcome_text": "🔥 <b>Крутой материал!</b>\n\nОписание вашего продукта здесь.\nЧто получит покупатель после оплаты.",
+    "welcome_photo": "",
+    "sale_text": "💎 <b>Забери свой материал!</b>\n\nЗдесь описание того что вы покупаете.\nЦенность продукта.",
+    "sale_photo": "",
+    "sale_button_text": "Забрать материал",
+    "price": 449,
+    "currency": "RUB",
+    "product_title": "Доступ к материалу",
+    "product_description": "После оплаты вы получите ссылку на материал",
+    "paid_text": "✅ <b>Оплата прошла успешно!</b>\n\nВот ваш материал:\n{link}",
+    "paid_link": "https://google.com"
+}
 
 
-def ensure_products_file() -> None:
-    if not PRODUCTS_PATH.exists():
-        with PRODUCTS_PATH.open("w", encoding="utf-8") as f:
-            json.dump(DEFAULT_PRODUCTS, f, ensure_ascii=False, indent=2)
-
-
-def load_products() -> Dict[str, Product]:
-    ensure_products_file()
-    with PRODUCTS_PATH.open("r", encoding="utf-8") as f:
-        raw = json.load(f)
-    products = {}
-    for item in raw:
-        products[item["id"]] = Product(**item)
-    return products
-
-
-def init_db() -> None:
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS purchases (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                username TEXT,
-                product_id TEXT NOT NULL,
-                telegram_payment_charge_id TEXT UNIQUE NOT NULL,
-                total_amount INTEGER NOT NULL,
-                currency TEXT NOT NULL,
-                purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
-        conn.commit()
-
-
-def purchase_exists(charge_id: str) -> bool:
-    with sqlite3.connect(DB_PATH) as conn:
-        row = conn.execute(
-            "SELECT 1 FROM purchases WHERE telegram_payment_charge_id = ?",
-            (charge_id,),
-        ).fetchone()
-        return row is not None
-
-
-def save_purchase(
-    user_id: int,
-    username: str,
-    product_id: str,
-    charge_id: str,
-    total_amount: int,
-    currency: str,
-) -> None:
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute(
-            """
-            INSERT OR IGNORE INTO purchases
-            (user_id, username, product_id, telegram_payment_charge_id, total_amount, currency)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (user_id, username, product_id, charge_id, total_amount, currency),
-        )
-        conn.commit()
-
-
-def product_card(product: Product) -> str:
-    return (
-        f"<b>{product.title}</b>\n"
-        f"{product.description}\n\n"
-        f"Цена: <b>{product.price_xtr} ⭐</b>"
-    )
-
-
-def catalog_keyboard(products: Dict[str, Product]) -> InlineKeyboardMarkup:
-    rows = [
-        [InlineKeyboardButton(p.button_text or f"Купить {p.title}", callback_data=f"buy:{p.id}")]
-        for p in products.values()
-    ]
-    return InlineKeyboardMarkup(rows)
-
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    products = context.bot_data["products"]
-    text = (
-        "<b>Магазин цифровых товаров</b>\n\n"
-        "Выберите товар ниже. Оплата цифровых товаров в Telegram проходит в Stars (⭐).\n\n"
-        f"Канал витрины: {CHANNEL_URL}"
-    )
-    if update.message:
-        await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=catalog_keyboard(products))
-
-
-async def catalog(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await start(update, context)
-
-
-async def pay_support(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    text = (
-        "Поддержка по оплатам и доставке:\n"
-        f"@{SUPPORT_USERNAME}\n\n"
-        "Напишите номер заказа, ваш @username и название товара."
-    )
-    if update.message:
-        await update.message.reply_text(text)
-
-
-async def terms(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    text = (
-        "Условия:\n"
-        "1. Это цифровые товары.\n"
-        "2. Доставка происходит автоматически после оплаты.\n"
-        "3. По спорным ситуациям используйте /paysupport.\n"
-        "4. Возвраты обрабатываются продавцом вручную."
-    )
-    if update.message:
-        await update.message.reply_text(text)
-
-
-async def on_buy_click(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    await query.answer()
-    _, product_id = query.data.split(":", 1)
-    products = context.bot_data["products"]
-    product = products.get(product_id)
-
-    if not product:
-        await query.message.reply_text("Товар не найден.")
-        return
-
-    prices = [LabeledPrice(label=product.title, amount=product.price_xtr)]
-
-    await context.bot.send_invoice(
-        chat_id=query.from_user.id,
-        title=product.title,
-        description=product.description,
-        payload=f"product:{product.id}",
-        currency="XTR",
-        prices=prices,
-        provider_token="",
-        photo_url=product.image_url,
-        start_parameter=f"buy-{product.id}",
-    )
-
-
-async def precheckout_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.pre_checkout_query
-    payload = query.invoice_payload
-
-    if not payload.startswith("product:"):
-        await query.answer(ok=False, error_message="Неверный товар.")
-        return
-
-    product_id = payload.split(":", 1)[1]
-    products = context.bot_data["products"]
-
-    if product_id not in products:
-        await query.answer(ok=False, error_message="Этот товар недоступен.")
-        return
-
-    await query.answer(ok=True)
-
-
-async def successful_payment_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    msg = update.message
-    payment = msg.successful_payment
-    payload = payment.invoice_payload
-    product_id = payload.split(":", 1)[1]
-    products = context.bot_data["products"]
-    product = products.get(product_id)
-
-    if not product:
-        await msg.reply_text("Оплата прошла, но товар не найден. Напишите в /paysupport")
-        return
-
-    charge_id = payment.telegram_payment_charge_id
-    if purchase_exists(charge_id):
-        return
-
-    save_purchase(
-        user_id=msg.from_user.id,
-        username=msg.from_user.username or "",
-        product_id=product.id,
-        charge_id=charge_id,
-        total_amount=payment.total_amount,
-        currency=payment.currency,
-    )
-
-    await deliver_product(msg, product)
-    await notify_admin(context, msg.from_user.id, msg.from_user.username or "", product)
-
-
-async def deliver_product(message, product: Product) -> None:
-    await message.reply_text(
-        f"Оплата получена ✅\n\nВаш товар: {product.title}",
-    )
-
-    if product.delivery_type == "text":
-        await message.reply_text(product.delivery_value, disable_web_page_preview=True)
-    elif product.delivery_type == "document_file_id":
-        await message.reply_document(document=product.delivery_value, caption=f"Ваш товар: {product.title}")
-    elif product.delivery_type == "photo_file_id":
-        await message.reply_photo(photo=product.delivery_value, caption=f"Ваш товар: {product.title}")
-    else:
-        await message.reply_text(
-            "Товар оплачен, но способ доставки не настроен. Напишите в /paysupport"
-        )
-
-
-async def notify_admin(context: ContextTypes.DEFAULT_TYPE, user_id: int, username: str, product: Product) -> None:
-    if not ADMIN_CHAT_ID:
-        return
-
-    text = (
-        "Новая продажа 💸\n"
-        f"Пользователь: {username or 'без username'} (ID: {user_id})\n"
-        f"Товар: {product.title}\n"
-        f"Цена: {product.price_xtr} ⭐"
-    )
+# ===== ЗАГРУЗКА / СОХРАНЕНИЕ =====
+def load_data():
     try:
-        await context.bot.send_message(chat_id=int(ADMIN_CHAT_ID), text=text)
-    except Exception as exc:
-        logger.warning("Не удалось отправить уведомление админу: %s", exc)
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            saved = json.load(f)
+            for key, value in DEFAULT_DATA.items():
+                if key not in saved:
+                    saved[key] = value
+            return saved
+    except:
+        save_data(DEFAULT_DATA)
+        return DEFAULT_DATA.copy()
 
 
-async def handle_unknown(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if update.message and update.message.text:
-        await update.message.reply_text(
-            "Используйте /start, /catalog, /paysupport или кнопки магазина."
+def save_data(d):
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(d, f, ensure_ascii=False, indent=2)
+
+
+data = load_data()
+
+
+# ===== ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ОТПРАВКИ СООБЩЕНИЯ =====
+# Отправляет сообщение: если есть фото — с фото, если нет — текстом
+async def send_message_with_or_without_photo(chat_id, text, photo, keyboard):
+    if photo:
+        await bot.send_photo(
+            chat_id=chat_id,
+            photo=photo,
+            caption=text,
+            reply_markup=keyboard
+        )
+    else:
+        await bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            reply_markup=keyboard
         )
 
 
-def main() -> None:
-    load_dotenv()
-    global BOT_TOKEN, SUPPORT_USERNAME, CHANNEL_URL, ADMIN_CHAT_ID
-    BOT_TOKEN = os.getenv("BOT_TOKEN", BOT_TOKEN)
-    SUPPORT_USERNAME = os.getenv("SUPPORT_USERNAME", SUPPORT_USERNAME)
-    CHANNEL_URL = os.getenv("CHANNEL_URL", CHANNEL_URL)
-    ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID", ADMIN_CHAT_ID)
+# ===========================
+# ===== ПОЛЬЗОВАТЕЛЬ ========
+# ===========================
 
-    if not BOT_TOKEN:
-        raise RuntimeError("Не найден BOT_TOKEN. Скопируйте .env.example в .env и укажите токен.")
+# Сообщение 1 — Приветствие
+@dp.message_handler(commands=['start'], state="*")
+async def start(message: types.Message, state: FSMContext):
+    await state.finish()
 
-    init_db()
-    products = load_products()
+    kb = InlineKeyboardMarkup(row_width=1)
+    kb.add(InlineKeyboardButton("✅ Забрать", callback_data="show_sale"))
 
-    application = Application.builder().token(BOT_TOKEN).build()
-    application.bot_data["products"] = products
+    await send_message_with_or_without_photo(
+        chat_id=message.chat.id,
+        text=data["welcome_text"],
+        photo=data.get("welcome_photo", ""),
+        keyboard=kb
+    )
 
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("catalog", catalog))
-    application.add_handler(CommandHandler("paysupport", pay_support))
-    application.add_handler(CommandHandler("terms", terms))
-    application.add_handler(CallbackQueryHandler(on_buy_click, pattern=r"^buy:"))
-    application.add_handler(PreCheckoutQueryHandler(precheckout_callback))
-    application.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_callback))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown))
 
-    logger.info("Bot started")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+# Сообщение 2 — Выдача (после нажатия "✅ Забрать")
+@dp.callback_query_handler(lambda c: c.data == "show_sale", state="*")
+async def show_sale(callback: types.CallbackQuery):
+    await callback.answer()
 
+    button_text = f"💳 {data['sale_button_text']} {data['price']}₽"
+    kb = InlineKeyboardMarkup(row_width=1)
+    kb.add(InlineKeyboardButton(button_text, callback_data="buy"))
+
+    await send_message_with_or_without_photo(
+        chat_id=callback.message.chat.id,
+        text=data["sale_text"],
+        photo=data.get("sale_photo", ""),
+        keyboard=kb
+    )
+
+
+# Инвойс оплаты
+@dp.callback_query_handler(lambda c: c.data == "buy", state="*")
+async def buy(callback: types.CallbackQuery):
+    await callback.answer()
+    prices = [LabeledPrice(label=data["product_title"], amount=data["price"] * 100)]
+    await bot.send_invoice(
+        chat_id=callback.from_user.id,
+        title=data["product_title"],
+        description=data["product_description"],
+        payload="paid_content",
+        provider_token=PROVIDER_TOKEN,
+        currency=data["currency"],
+        prices=prices,
+    )
+
+
+@dp.pre_checkout_query_handler(state="*")
+async def process_pre_checkout_query(pre_checkout_query: PreCheckoutQuery):
+    await bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
+
+
+@dp.message_handler(content_types=types.ContentType.SUCCESSFUL_PAYMENT, state="*")
+async def successful_payment(message: types.Message):
+    paid_text = data["paid_text"].format(link=data["paid_link"])
+    await message.answer(paid_text)
+
+
+# ===========================
+# ===== АДМИН ПАНЕЛЬ ========
+# ===========================
+
+def is_admin(message: types.Message):
+    return message.from_user.id == ADMIN_ID
+
+
+@dp.message_handler(lambda msg: is_admin(msg) and msg.text == "/admin", state="*")
+async def admin_panel(message: types.Message, state: FSMContext):
+    await state.finish()
+    text = (
+        "⚙️ <b>Панель администратора</b>\n\n"
+        "📝 <b>ПРИВЕТСТВИЕ (сообщение 1):</b>\n"
+        "/setwelcome [текст] — изменить текст\n"
+        "/setphoto — прикрепить фото (спросит куда)\n"
+        "/clearphoto — убрать фото\n\n"
+        "💎 <b>ВЫДАЧА (сообщение 2):</b>\n"
+        "/setsale [текст] — изменить текст\n"
+        "/setphoto — прикрепить фото (спросит куда)\n"
+        "/clearphoto — убрать фото\n"
+        "/setbutton [текст] — текст кнопки без цены\n\n"
+        "💳 <b>ОПЛАТА:</b>\n"
+        "/setprice [число] — цена в рублях\n"
+        "/settitle [текст] — название товара\n"
+        "/setdesc [текст] — описание\n\n"
+        "🔗 <b>ПОСЛЕ ОПЛАТЫ:</b>\n"
+        "/setlink [ссылка] — ссылка на материал\n"
+        "/setpaidtext [текст] — сообщение ({link} = ссылка)\n\n"
+        "👁 <b>ПРОСМОТР:</b>\n"
+        "/preview — как видит пользователь\n"
+        "/status — все настройки\n\n"
+        "❌ /cancel — отмена"
+    )
+    await message.answer(text)
+
+
+@dp.message_handler(lambda msg: is_admin(msg) and msg.text == "/status", state="*")
+async def show_status(message: types.Message, state: FSMContext):
+    await state.finish()
+    text = (
+        "📊 <b>Текущие настройки:</b>\n\n"
+        f"1️⃣ <b>Приветствие:</b>\n{data['welcome_text'][:200]}\n"
+        f"🖼 Фото: {'✅ Есть' if data.get('welcome_photo') else '❌ Нет'}\n\n"
+        f"2️⃣ <b>Выдача:</b>\n{data['sale_text'][:200]}\n"
+        f"🖼 Фото: {'✅ Есть' if data.get('sale_photo') else '❌ Нет'}\n"
+        f"🔘 Кнопка: 💳 {data['sale_button_text']} {data['price']}₽\n\n"
+        f"💰 <b>Цена:</b> {data['price']}₽\n"
+        f"📦 <b>Название:</b> {data['product_title']}\n"
+        f"🔗 <b>Ссылка:</b> {data['paid_link']}"
+    )
+    await message.answer(text)
+
+
+# Превью — показывает ОБА сообщения как видит пользователь
+@dp.message_handler(lambda msg: is_admin(msg) and msg.text == "/preview", state="*")
+async def preview(message: types.Message, state: FSMContext):
+    await state.finish()
+
+    # --- Сообщение 1 ---
+    await message.answer("👁 <b>Сообщение 1 — Приветствие:</b>")
+    kb1 = InlineKeyboardMarkup()
+    kb1.add(InlineKeyboardButton("✅ Забрать", callback_data="show_sale"))
+
+    await send_message_with_or_without_photo(
+        chat_id=message.chat.id,
+        text=data["welcome_text"],
+        photo=data.get("welcome_photo", ""),
+        keyboard=kb1
+    )
+
+    # --- Сообщение 2 ---
+    await message.answer("👁 <b>Сообщение 2 — Выдача:</b>")
+    kb2 = InlineKeyboardMarkup()
+    kb2.add(InlineKeyboardButton(f"💳 {data['sale_button_text']} {data['price']}₽", callback_data="buy"))
+
+    await send_message_with_or_without_photo(
+        chat_id=message.chat.id,
+        text=data["sale_text"],
+        photo=data.get("sale_photo", ""),
+        keyboard=kb2
+    )
+
+
+# ===== ИЗМЕНЕНИЕ ТЕКСТОВ =====
+
+@dp.message_handler(lambda msg: is_admin(msg) and msg.text and msg.text.startswith("/setwelcome "), state="*")
+async def set_welcome_text(message: types.Message, state: FSMContext):
+    await state.finish()
+    new_text = message.text.replace("/setwelcome ", "", 1)
+    data["welcome_text"] = new_text
+    save_data(data)
+    await message.answer(f"✅ Текст <b>приветствия</b> обновлён!\n\n{new_text}")
+
+
+@dp.message_handler(lambda msg: is_admin(msg) and msg.text and msg.text.startswith("/setsale "), state="*")
+async def set_sale_text(message: types.Message, state: FSMContext):
+    await state.finish()
+    new_text = message.text.replace("/setsale ", "", 1)
+    data["sale_text"] = new_text
+    save_data(data)
+    await message.answer(f"✅ Текст <b>выдачи</b> обновлён!\n\n{new_text}")
+
+
+@dp.message_handler(lambda msg: is_admin(msg) and msg.text and msg.text.startswith("/setbutton "), state="*")
+async def set_button_text(message: types.Message, state: FSMContext):
+    await state.finish()
+    new_text = message.text.replace("/setbutton ", "", 1)
+    data["sale_button_text"] = new_text
+    save_data(data)
+    await message.answer(f"✅ Кнопка: 💳 {new_text} {data['price']}₽")
+
+
+@dp.message_handler(lambda msg: is_admin(msg) and msg.text and msg.text.startswith("/setprice "), state="*")
+async def set_price(message: types.Message, state: FSMContext):
+    await state.finish()
+    try:
+        price = int(message.text.replace("/setprice ", "", 1))
+        data["price"] = price
+        save_data(data)
+        await message.answer(f"✅ Цена: <b>{price}₽</b>")
+    except ValueError:
+        await message.answer("❌ Укажите число. Пример: /setprice 490")
+
+
+@dp.message_handler(lambda msg: is_admin(msg) and msg.text and msg.text.startswith("/settitle "), state="*")
+async def set_title(message: types.Message, state: FSMContext):
+    await state.finish()
+    new_title = message.text.replace("/settitle ", "", 1)
+    data["product_title"] = new_title
+    save_data(data)
+    await message.answer(f"✅ Название: <b>{new_title}</b>")
+
+
+@dp.message_handler(lambda msg: is_admin(msg) and msg.text and msg.text.startswith("/setdesc "), state="*")
+async def set_desc(message: types.Message, state: FSMContext):
+    await state.finish()
+    new_desc = message.text.replace("/setdesc ", "", 1)
+    data["product_description"] = new_desc
+    save_data(data)
+    await message.answer(f"✅ Описание: <b>{new_desc}</b>")
+
+
+@dp.message_handler(lambda msg: is_admin(msg) and msg.text and msg.text.startswith("/setlink "), state="*")
+async def set_link(message: types.Message, state: FSMContext):
+    await state.finish()
+    new_link = message.text.replace("/setlink ", "", 1)
+    data["paid_link"] = new_link
+    save_data(data)
+    await message.answer(f"✅ Ссылка: {new_link}")
+
+
+@dp.message_handler(lambda msg: is_admin(msg) and msg.text and msg.text.startswith("/setpaidtext "), state="*")
+async def set_paid_text(message: types.Message, state: FSMContext):
+    await state.finish()
+    new_text = message.text.replace("/setpaidtext ", "", 1)
+    data["paid_text"] = new_text
+    save_data(data)
+    preview_text = new_text.format(link=data["paid_link"])
+    await message.answer(f"✅ Сообщение после оплаты:\n\n{preview_text}")
+
+
+# ===========================
+# ===== ФОТО — FSM FLOW =====
+# ===========================
+
+# Шаг 1: /setphoto — просим отправить фото
+@dp.message_handler(lambda msg: is_admin(msg) and msg.text == "/setphoto", state="*")
+async def cmd_setphoto(message: types.Message, state: FSMContext):
+    await state.finish()
+    await AdminStates.waiting_for_photo.set()
+    await message.answer(
+        "📸 Отправьте фото.\n\n"
+        "Для отмены: /cancel"
+    )
+
+
+# Шаг 2: Получили фото — спрашиваем куда
+@dp.message_handler(
+    lambda msg: is_admin(msg),
+    content_types=types.ContentType.PHOTO,
+    state=AdminStates.waiting_for_photo
+)
+async def receive_photo(message: types.Message, state: FSMContext):
+    # Берём самое качественное фото (последнее в массиве)
+    file_id = message.photo[-1].file_id
+    print(f"[DEBUG] Получено фото file_id: {file_id}")
+
+    # Сохраняем file_id в памяти FSM
+    await state.update_data(pending_photo=file_id)
+
+    kb = InlineKeyboardMarkup(row_width=1)
+    kb.add(
+        InlineKeyboardButton("1️⃣ Приветствие (сообщение 1)", callback_data="photo_to_welcome"),
+        InlineKeyboardButton("2️⃣ Выдача (сообщение 2)", callback_data="photo_to_sale"),
+    )
+    await message.answer(
+        "✅ Фото получено!\n\n"
+        "К какому сообщению прикрепить?",
+        reply_markup=kb
+    )
+
+
+# Шаг 3а: Прикрепляем к приветствию (сообщение 1)
+@dp.callback_query_handler(lambda c: c.data == "photo_to_welcome", state=AdminStates.waiting_for_photo)
+async def attach_to_welcome(callback: types.CallbackQuery, state: FSMContext):
+    fsm_data = await state.get_data()
+    file_id = fsm_data.get("pending_photo")
+
+    print(f"[DEBUG] Сохраняем фото в welcome_photo: {file_id}")
+    data["welcome_photo"] = file_id
+    save_data(data)
+    await state.finish()
+
+    await callback.message.edit_text(
+        "✅ Фото прикреплено к <b>Приветствию (сообщение 1)</b>!\n\n"
+        "Напишите /preview чтобы проверить."
+    )
+    await callback.answer("Сохранено!")
+
+
+# Шаг 3б: Прикрепляем к выдаче (сообщение 2)
+@dp.callback_query_handler(lambda c: c.data == "photo_to_sale", state=AdminStates.waiting_for_photo)
+async def attach_to_sale(callback: types.CallbackQuery, state: FSMContext):
+    fsm_data = await state.get_data()
+    file_id = fsm_data.get("pending_photo")
+
+    print(f"[DEBUG] Сохраняем фото в sale_photo: {file_id}")
+    data["sale_photo"] = file_id
+    save_data(data)
+    await state.finish()
+
+    await callback.message.edit_text(
+        "✅ Фото прикреплено к <b>Выдаче (сообщение 2)</b>!\n\n"
+        "Напишите /preview чтобы проверить."
+    )
+    await callback.answer("Сохранено!")
+
+
+# Если фото прислали вне режима /setphoto — подсказка
+@dp.message_handler(
+    lambda msg: is_admin(msg),
+    content_types=types.ContentType.PHOTO,
+    state="*"
+)
+async def photo_without_state(message: types.Message):
+    await message.answer(
+        "📸 Получил фото!\n\n"
+        "Чтобы прикрепить к сообщению — напишите /setphoto\n"
+        "и затем отправьте фото ещё раз."
+    )
+
+
+# Убрать фото
+@dp.message_handler(lambda msg: is_admin(msg) and msg.text == "/clearphoto", state="*")
+async def clear_photo_menu(message: types.Message, state: FSMContext):
+    await state.finish()
+    kb = InlineKeyboardMarkup(row_width=1)
+    kb.add(
+        InlineKeyboardButton("1️⃣ Убрать из Приветствия", callback_data="clear_welcome_photo"),
+        InlineKeyboardButton("2️⃣ Убрать из Выдачи", callback_data="clear_sale_photo"),
+    )
+    await message.answer("Из какого сообщения убрать фото?", reply_markup=kb)
+
+
+@dp.callback_query_handler(lambda c: c.data == "clear_welcome_photo", state="*")
+async def clear_welcome_photo(callback: types.CallbackQuery):
+    data["welcome_photo"] = ""
+    save_data(data)
+    await callback.message.edit_text("✅ Фото удалено из <b>Приветствия</b>.")
+    await callback.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "clear_sale_photo", state="*")
+async def clear_sale_photo(callback: types.CallbackQuery):
+    data["sale_photo"] = ""
+    save_data(data)
+    await callback.message.edit_text("✅ Фото удалено из <b>Выдачи</b>.")
+    await callback.answer()
+
+
+# Отмена
+@dp.message_handler(lambda msg: is_admin(msg) and msg.text == "/cancel", state="*")
+async def cancel(message: types.Message, state: FSMContext):
+    await state.finish()
+    await message.answer("❌ Отменено. Напишите /admin для меню.")
+
+
+# ===========================
+# ======= ЗАПУСК ============
+# ===========================
 
 if __name__ == "__main__":
-    main()
+    print("🤖 Бот запускается...")
+    print(f"✅ Admin ID: {ADMIN_ID}")
+    print(f"✅ Цена: {data['price']}₽")
+    print(f"✅ Фото приветствия: {data.get('welcome_photo', 'нет')}")
+    print(f"✅ Фото выдачи: {data.get('sale_photo', 'нет')}")
+    print("🚀 Polling started!")
+    executor.start_polling(dp, skip_updates=True)
