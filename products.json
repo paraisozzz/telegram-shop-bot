@@ -1,20 +1,13 @@
-[
-  {
-    "id": "guide_1",
-    "title": "100 ПРОМПТОВ CHATGPT ДЛЯ ЗАРАБОТКА",
-    "description": "Практическое руководство по заработку с помощью искусственного интеллекта",
-    "price_xtr": 310,
-    "delivery_type": "text",
-    "delivery_value": "https://t.me/Zarabotok49_bot"
-
-Use this token to access the HTTP API:
-7981019669
-Keep your token secure and store it safely, it can be used by anyone to control your bot.
-
-For a description of the Bot API, see this page: https://core.telegram.org/bots/apil",
-    "button_text": "Купить за 310 руб. ⭐",
-    "image_url": "https://placehold.co/1200x800/png?text=Digital+Guide"
-  },
-  {
-    }
-]
+{
+  "welcome_text": "🔥 <b>Крутой материал!</b>\n\nОписание вашего продукта здесь.\nЧто получит покупатель после оплаты.",
+  "welcome_photo": "",
+  "sale_text": "💎 <b>Забери свой материал!</b>\n\nЗдесь описание того что вы покупаете.\nЦенность продукта.",
+  "sale_photo": "",
+  "sale_button_text": "Забрать материал",
+  "price": 449,
+  "currency": "RUB",
+  "product_title": "Доступ к материалу",
+  "product_description": "После оплаты вы получите ссылку на материал",
+  "paid_text": "✅ <b>Оплата прошла успешно!</b>\n\nВот ваш материал:\n{link}",
+  "paid_link": "https://google.com"
+}
