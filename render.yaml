@@ -12,7 +12,7 @@ services:
       - key: SUPPORT_USERNAME
         value: lotus762001
       - key: SHOP_TITLE
-        value: Заработок на нейросетях
+        value: Zarabotok49_bot
       - key: START_TEXT
         value: Добро пожаловать в магазин по заработку на нейросетях! Здесь вы можете купить гайды, промпты и инструменты, которые помогут начать зарабатывать с помощью ИИ уже сегодня.
       - key: SHOP_TEXT
