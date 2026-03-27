@@ -1,6 +1,6 @@
 services:
   - type: worker
-    name: zarabotok-na-neirosetyah-bot
+    name: Zarabotok49_bot
     runtime: python
     plan: starter
     buildCommand: pip install -r requirements.txt
@@ -8,7 +8,7 @@ services:
     autoDeploy: true
     envVars:
       - key: BOT_TOKEN
-        sync: false
+        sync: 7981019669:AAHhHL2vsT9GpGqh70HSzwV5ydR4f_F9hhQ
       - key: SUPPORT_USERNAME
         value: lotus762001
       - key: SHOP_TITLE
