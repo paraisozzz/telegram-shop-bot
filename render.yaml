@@ -8,7 +8,7 @@ services:
     autoDeploy: true
     envVars:
       - key: BOT_TOKEN
-        sync: 7981019669:AAHhHL2vsT9GpGqh70HSzwV5ydR4f_F9hhQ
+        sync: true
       - key: SUPPORT_USERNAME
         value: lotus762001
       - key: SHOP_TITLE
