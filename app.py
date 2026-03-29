@@ -42,7 +42,7 @@ DEFAULT_PRODUCTS = [
         "description": "Руководство «1000 промптов для заработка с ChatGPT» — готовые запросы для заработка на текстах, контенте, маркетинге, переводах, идеях и онлайн-услугах.",
         "price_stars": 299,
         "price_rub": 410,
-        "rub_payment_url": "https://yoomoney.ru/quickpay/confirm.xml?receiver=410014639141366&sum=410&targets=1000%20промптов",
+        "rub_payment_url": "https://paraisozzz.github.io/ai-site/#pay-product-1",
         "delivery_text": "Спасибо за покупку!\n\nВаш цифровой продукт готов к скачиванию:\nhttps://clck.ru/3SnYDx\n\nСохраните файл себе на устройство.\nЕсли возникнут вопросы, напишите в поддержку: @lotus762001",
     },
     {
@@ -51,7 +51,7 @@ DEFAULT_PRODUCTS = [
         "description": "«50 способов заработать на нейросетях в 2026 году» — сборник актуальных идей и пошаговых схем заработка с помощью искусственного интеллекта.",
         "price_stars": 289,
         "price_rub": 400,
-        "rub_payment_url": "https://yoomoney.ru/quickpay/confirm.xml?receiver=410014639141366&sum=400&targets=50%20способов",
+        "rub_payment_url": "https://paraisozzz.github.io/ai-site/#pay-product-2",
         "delivery_text": "Спасибо за покупку!\n\nВаш цифровой продукт готов к скачиванию:\nhttps://clck.ru/3SnYqW\n\nСохраните файл себе на устройство.\nЕсли возникнут вопросы, напишите в поддержку: @lotus762001",
     },
     {
@@ -60,7 +60,7 @@ DEFAULT_PRODUCTS = [
         "description": "«365 идей контента для Telegram, TikTok и Reels» — это готовый план постов и видео на каждый день для роста подписчиков и заработка на контенте.",
         "price_stars": 289,
         "price_rub": 405,
-        "rub_payment_url": "https://yoomoney.ru/quickpay/confirm.xml?receiver=410014639141366&sum=405&targets=365%20идей",
+        "rub_payment_url": "https://paraisozzz.github.io/ai-site/#pay-product-3",
         "delivery_text": "Спасибо за покупку!\n\nВаш цифровой продукт готов к скачиванию:\nhttps://clck.ru/3SnZUN\n\nСохраните файл себе на устройство.\nЕсли возникнут вопросы, напишите в поддержку: @lotus762001",
     },
     {
@@ -69,7 +69,7 @@ DEFAULT_PRODUCTS = [
         "description": "Руководство «Как делать AI-видео и зарабатывать на них» — это пошаговая инструкция по созданию видео с помощью нейросетей и способам заработка на коротких видео и контенте.",
         "price_stars": 279,
         "price_rub": 390,
-        "rub_payment_url": "https://yoomoney.ru/quickpay/confirm.xml?receiver=410014639141366&sum=390&targets=AI%20видео",
+        "rub_payment_url": "https://paraisozzz.github.io/ai-site/#pay-product-4",
         "delivery_text": "Спасибо за покупку!\n\nВаш цифровой продукт готов к скачиванию:\nhttps://clck.ru/3SnZgq\n\nСохраните файл себе на устройство.\nЕсли возникнут вопросы, напишите в поддержку: @lotus762001",
     },
 ]
@@ -93,7 +93,7 @@ ABOUT_TEXT = os.getenv(
     "— идеи контента\n"
     "— способы заработка\n"
     "— AI-видео\n\n"
-    "Можно оплатить через Telegram Stars или перейти на внешний сайт для оплаты в рублях.",
+    "Можно оплатить через Telegram Stars или перейти на сайт для оплаты в рублях.",
 )
 PRODUCTS_JSON = os.getenv("PRODUCTS_JSON", json.dumps(DEFAULT_PRODUCTS, ensure_ascii=False))
 DB_PATH = Path(os.getenv("DB_PATH", "bot_data.sqlite3"))
@@ -200,17 +200,11 @@ def shop_keyboard() -> InlineKeyboardMarkup:
 
 def product_keyboard(product: Product) -> InlineKeyboardMarkup:
     buttons = [
-        [InlineKeyboardButton(f"💳 Купить за {product.price_stars} ⭐", callback_data=f"buy:{product.code}")]
+        [InlineKeyboardButton(f"💳 Купить за {product.price_stars} ⭐", callback_data=f"buy:{product.code}")],
+        [InlineKeyboardButton(f"💸 Оплатить {product.price_rub} ₽", url=product.rub_payment_url)],
+        [InlineKeyboardButton("🛍 Назад в магазин", callback_data="menu:shop")],
+        [InlineKeyboardButton("⬅️ Главное меню", callback_data="menu:main")],
     ]
-
-    if product.rub_payment_url:
-        buttons.append(
-            [InlineKeyboardButton(f"💸 Оплатить {product.price_rub} ₽", url=product.rub_payment_url)]
-        )
-
-    buttons.append([InlineKeyboardButton("🛍 Назад в магазин", callback_data="menu:shop")])
-    buttons.append([InlineKeyboardButton("⬅️ Главное меню", callback_data="menu:main")])
-
     return InlineKeyboardMarkup(buttons)
 
 
@@ -256,7 +250,7 @@ def product_message(product: Product) -> str:
         f"{product.title}\n\n"
         f"{product.description}\n\n"
         f"Цена в Telegram: ⭐ {product.price_stars}\n"
-        f"Цена через ЮMoney: {product.price_rub} ₽\n\n"
+        f"Цена в рублях: {product.price_rub} ₽\n\n"
         "Выберите удобный способ оплаты ниже."
     )
 
