@@ -42,10 +42,10 @@ class Product:
     delivery_text: str
 
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-YOOKASSA_SHOP_ID = os.getenv("YOOKASSA_SHOP_ID", "")
-YOOKASSA_SECRET_KEY = os.getenv("YOOKASSA_SECRET_KEY", "")
-PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "7981019669:AAFhu30l8e2dWwOnvSbd-nzEgFU-3_PvQHo")
+YOOKASSA_SHOP_ID = os.getenv("YOOKASSA_SHOP_ID", "1314251")
+YOOKASSA_SECRET_KEY = os.getenv("YOOKASSA_SECRET_KEY", "live_s7db1N1Hu7Cv8HNY3suEcZzePqBckACe4pOF-v_ohQA")
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://zarabotok49-bot-u1da.onrender.com").rstrip("/")
 PORT = int(os.getenv("PORT", "10000"))
 SUPPORT_USERNAME = os.getenv("SUPPORT_USERNAME", "lotus762001").replace("@", "")
 SHOP_TITLE = os.getenv("SHOP_TITLE", "Заработок на нейросетях")
