@@ -42,7 +42,7 @@ class Product:
     delivery_text: str
 
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "7981019669:AAFhu30l8e2dWwOnvSbd-nzEgFU-3_PvQHo")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "7981019669:AAFPYEm-Tr5VJgU4TlgPP0SK7S74j9zywTE")
 YOOKASSA_SHOP_ID = os.getenv("YOOKASSA_SHOP_ID", "1314251")
 YOOKASSA_SECRET_KEY = os.getenv("YOOKASSA_SECRET_KEY", "live_s7db1N1Hu7Cv8HNY3suEcZzePqBckACe4pOF-v_ohQA")
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://zarabotok49-bot-u1da.onrender.com").rstrip("/")
