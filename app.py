@@ -29,7 +29,7 @@ logging.basicConfig(
     format="%(asctime)s | %(name)s | %(levelname)s | %(message)s",
     level=logging.INFO,
 )
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("main")
 
 
 @dataclass(frozen=True)
@@ -48,6 +48,7 @@ YOOKASSA_SECRET_KEY = os.getenv("YOOKASSA_SECRET_KEY", "live_s7db1N1Hu7Cv8HNY3su
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://zarabotok49-bot-u1da.onrender.com").rstrip("/")
 PORT = int(os.getenv("PORT", "10000"))
 SUPPORT_USERNAME = os.getenv("SUPPORT_USERNAME", "lotus762001").replace("@", "")
+ADMIN_CHAT_ID = 850974066
 SHOP_TITLE = os.getenv("SHOP_TITLE", "Заработок на нейросетях")
 SHOP_TEXT = os.getenv("SHOP_TEXT", "Выберите товар и удобный способ оплаты.")
 DB_PATH = Path(os.getenv("DB_PATH", "bot_data.sqlite3"))
@@ -276,6 +277,15 @@ def orders_message(user_id: int) -> str:
     return "\n".join(lines)
 
 
+async def notify_admin(text: str) -> None:
+    if APPLICATION is None:
+        return
+    try:
+        await APPLICATION.bot.send_message(chat_id=ADMIN_CHAT_ID, text=text)
+    except Exception as exc:
+        logger.exception("Admin notify error: %s", exc)
+
+
 async def send_delivery(user_id: int, product: Product) -> None:
     if APPLICATION is None:
         return
@@ -398,6 +408,16 @@ class WebhookHandler(BaseHTTPRequestHandler):
 
             if APP_LOOP is not None:
                 asyncio.run_coroutine_threadsafe(send_delivery(user_id, product), APP_LOOP)
+                asyncio.run_coroutine_threadsafe(
+                    notify_admin(
+                        f"💳 Новая покупка (ЮKassa)\n\n"
+                        f"Товар: {product.title}\n"
+                        f"Сумма: {amount} ₽\n"
+                        f"Покупатель: @{username or 'без username'}\n"
+                        f"Telegram ID: {user_id}"
+                    ),
+                    APP_LOOP,
+                )
 
             self._send_json(200, {"ok": True})
         except Exception as exc:
@@ -577,6 +597,14 @@ async def successful_payment_callback(update: Update, context: ContextTypes.DEFA
             payment_id=payment_id,
             source="stars",
         )
+
+    await notify_admin(
+        f"🛒 Новая покупка (Stars)\n\n"
+        f"Товар: {product.title}\n"
+        f"Сумма: {product.price_stars} ⭐\n"
+        f"Покупатель: @{update.effective_user.username or 'без username'}\n"
+        f"Telegram ID: {update.effective_user.id}"
+    )
 
     await send_delivery(update.effective_user.id, product)
 
